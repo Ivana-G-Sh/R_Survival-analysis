@@ -1,0 +1,109 @@
+---
+title: "SURVIVAL_ANALYSIS"
+output: html_document
+date: 20 March, 2019
+---
+
+https://stat.ethz.ch/R-manual/R-devel/library/survival/html/ovarian.html
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(kableExtra)
+```
+
+#### Cleaning data
+
+```{r, include=TRUE}
+#rx is treatment group
+#residual disease present (1=no, 2=yes)
+#ecog.ps: ECOG performance status (1 is better, see reference)
+
+data("ovarian")
+head(ovarian)
+
+ovarian$rx <- factor(ovarian$rx,levels = c("1", "2"), labels = c("A", "B")) 
+ovarian$resid.ds <- factor(ovarian$resid.ds, levels = c("1", "2"), labels = c("no", "yes")) 
+ovarian$ecog.ps <- factor(ovarian$ecog.ps, levels = c("1", "2"), labels = c("good", "bad"))
+head(ovarian)
+```
+
+#### Kaplan-Meier (survival package)
+
+```{r, include=TRUE}
+#futime: survival or censoring time
+#fustat: censoring status
+
+#1 create km with survfit for whole cohort
+km_fit <- survfit(Surv(futime, fustat) ~ 1, data=ovarian) 
+print(km_fit)
+summary(km_fit)
+#Use times() parameter to select some clinically relevant time points
+summary(km_fit, times = c(90, 270, 450)) 
+
+
+#2 create km with survfit for cohort according to presence of residual disease
+km_grp_fit <- survfit(Surv(futime, fustat) ~ resid.ds, data=ovarian)
+print(km_grp_fit)
+summary(km_grp_fit)
+```
+-time: time points on the curve. n.risk: the number of subjects at risk at time t. n.event: the number of events that occurred at time t.lower,upper: lower and upper confidence limits for the curve, respectively
+
+
+
+####plot KM curve in base R
+```{r, include=TRUE}
+#1
+plot(km_fit, xlab="Days", main = 'KMPlot')
+
+#2
+plot(km_grp_fit, xlab="Days", main = 'KMPlot', conf.int=TRUE, col=c("red","blue"))
+legend(100, .2, c("No Residual Disease", "Residual Disease"), lty = c(1:2), col=c("red","blue"))
+```
+
+
+
+#### plot KM curve with survminer package
+```{r, include=TRUE}
+library(survminer)
+km_fit <- survfit(Surv(futime, fustat) ~ 1, data=ovarian) 
+ggsurvplot(km_fit, data = ovarian , risk.table = TRUE, pval = TRUE, conf.int = TRUE)
+km_grp_fit <- survfit(Surv(futime, fustat) ~ resid.ds, data=ovarian)
+ggsurvplot(km_grp_fit, data = ovarian , risk.table = TRUE, pval = TRUE, conf.int = TRUE)
+```
+
+####Log-rank test
+**to compare survival curves of two or more groups. Null hypothesis is that that survival curves of two populations do not differ**
+
+
+```{r}
+survdiff <- survdiff(Surv(futime, fustat) ~ resid.ds, data = ovarian)
+survdiff
+```
+**Results:**p = 0.06. Don't have sufficient evidence to reject the null hypothesis.
+
+
+####Cox Proportional hazards (cph) regression (multivariable survival analysis)
+**to describe the effect of variables on survival**
+
+```{r}
+#create survival object
+surv1 <- Surv(time = ovarian$futime, event = ovarian$fustat) 
+surv1
+
+#do regression
+fit_cph <- coxph(surv1 ~ rx + resid.ds + age + ecog.ps, data = ovarian)
+summary(fit_cph)
+cox_fin<-round(exp(cbind(HR = coefficients(fit_cph), confint(fit_cph))), digits=2)
+
+cox_fin %>%
+  kable() %>%
+  kable_styling(full_width = F)
+
+#Interpretations:
+#HR = 1: No effect
+#HR < 1: Reduction in the hazard
+#HR > 1: Increase in Hazard
+```
+-age is the only signif variable in this model, positively associated with outcome event (mortality)
+-We see from our CPH regression results, age is positively associated with hazard/risk of death (HR = 1.13 (1.03, 1.24), p = 0.008), accounting for treatment, residual disease and ecog score
